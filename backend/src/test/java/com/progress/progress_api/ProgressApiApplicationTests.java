@@ -1,4 +1,4 @@
-package br.com.progress.progress_api;
+package com.progress.progress_api;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
