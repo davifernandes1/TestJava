@@ -2,22 +2,26 @@ package com.progress.progress_api.controller;
 
 import com.progress.progress_api.dto.AuthRequestDTO;
 import com.progress.progress_api.dto.AuthResponseDTO;
-import com.progress.progress_api.dto.UsuarioDTO;
+import com.progress.progress_api.model.Role;
 import com.progress.progress_api.model.Usuario;
 import com.progress.progress_api.security.JwtUtil;
 import com.progress.progress_api.service.CustomUserDetailsService;
-import com.progress.progress_api.service.UsuarioService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.stream.Collectors;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/auth")
-// @CrossOrigin(origins = "http://localhost:3000") // Configurado globalmente em SecurityConfig
 public class AuthController {
 
     @Autowired
@@ -28,9 +32,6 @@ public class AuthController {
 
     @Autowired
     private CustomUserDetailsService userDetailsService;
-
-    @Autowired
-    private UsuarioService usuarioService; // Para registro
 
     @PostMapping("/login")
     public ResponseEntity<?> createAuthenticationToken(@RequestBody AuthRequestDTO authRequestDTO) throws Exception {
@@ -44,20 +45,18 @@ public class AuthController {
 
         final UserDetails userDetails = userDetailsService.loadUserByUsername(authRequestDTO.getEmail());
         final String token = jwtUtil.generateToken(userDetails);
-        
-        Usuario usuario = (Usuario) userDetails; // Cast seguro pois CustomUserDetailsService retorna Usuario
 
-        return ResponseEntity.ok(new AuthResponseDTO(token, usuario.getId(), usuario.getEmail(), usuario.getNome(), usuario.getRole()));
-    }
+        // Converte o UserDetails de volta para o nosso objeto Usuario
+        Usuario usuario = (Usuario) userDetails;
 
-    // Endpoint de registro (exemplo, pode ser ajustado ou removido)
-    @PostMapping("/registrar")
-    public ResponseEntity<?> registrarUsuario(@RequestBody UsuarioDTO usuarioDTO) {
-        try {
-            UsuarioDTO novoUsuario = usuarioService.criarUsuario(usuarioDTO);
-            return ResponseEntity.ok("Usuário registrado com sucesso! ID: " + novoUsuario.getId());
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+        // Mapeia o Set<Role> para um Set<String> com os nomes dos papéis
+        Set<String> roleNames = usuario.getRoles().stream()
+                                    .map(Role::getName)
+                                    .collect(Collectors.toSet());
+
+        // Retorna o DTO com todos os dados necessários para o frontend
+        return ResponseEntity.ok(
+            new AuthResponseDTO(token, usuario.getId(), usuario.getNome(), usuario.getEmail(), roleNames)
+        );
     }
 }

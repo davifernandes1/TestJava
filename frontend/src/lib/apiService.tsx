@@ -1,165 +1,158 @@
 // src/lib/apiService.ts
-import {
-    User, Feedback, PDI,
-    AuthResponseData,
+
+import type {
+    Usuario, Feedback, PDI, AuthResponse, AdminDashboardData,
     CreateUserFormData, UpdateUserFormData,
     CreateFeedbackFormData,
-    CreatePDIFormData, UpdatePDIFormData,
-    ApiClient
-} from './types'; // Certifique-se que este caminho está correto
+    CreatePDIFormData, UpdatePDIFormData
+} from './types';
 
-const API_BASE_URL = 'http://localhost:8081'; // Porta do seu backend Spring Boot
+// 1. Use uma variável de ambiente para a URL base da API
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8081/api';
 
-// Função auxiliar para adicionar o token de autorização aos headers
 const getAuthHeaders = (): HeadersInit => {
-    const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-    };
-    // Verifica se está no ambiente do navegador antes de acessar localStorage
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    if (typeof window !== 'undefined') {
+        const token = sessionStorage.getItem('authToken');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
     }
     return headers;
 };
 
-// Função auxiliar para lidar com respostas e erros da API
-async function handleResponse<T>(response: Response): Promise<{ data: T }> {
+async function handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
-        let errorData;
-        try {
-            errorData = await response.json();
-        } catch (e) {
-            errorData = { message: `Erro HTTP: ${response.status} ${response.statusText}` };
-        }
+        const errorData = await response.json().catch(() => ({
+            message: `Erro na API: ${response.status} ${response.statusText}`
+        }));
         console.error('API Error Response:', errorData);
-        throw new Error(errorData.message || errorData.error || `Erro na requisição: ${response.status}`);
+        throw new Error(errorData.message || 'Ocorreu um erro desconhecido na API.');
     }
-    if (response.status === 204) { // No Content
-        return { data: {} as T };
-    }
-    const data = await response.json();
-    return { data };
+    return response.status === 204 ? null as T : response.json();
 }
 
-// =============================================
-// DEFINIÇÃO DO API CLIENT CORRIGIDA
-// =============================================
-export const apiClient: ApiClient = {
-    get: async <R = any>(url: string, params?: Record<string, any>): Promise<{ data: R }> => {
-        const queryParams = params ? new URLSearchParams(params).toString() : '';
-        const fullUrl = `${API_BASE_URL}${url}${queryParams ? `?${queryParams}` : ''}`;
-        console.log(`API GET: ${fullUrl}`);
-        const response = await fetch(fullUrl, {
+// ========================================================
+// API CLIENT GENÉRICO COM SINTAXE CORRIGIDA
+// ========================================================
+const apiClient = {
+    async get<R>(endpoint: string): Promise<R> {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'GET',
             headers: getAuthHeaders(),
         });
         return handleResponse<R>(response);
     },
-
-    post: async <T = any, R = any>(url: string, body?: T): Promise<{ data: R }> => {
-        const fullUrl = `${API_BASE_URL}${url}`;
-        console.log(`API POST: ${fullUrl}`, body);
-        const response = await fetch(fullUrl, {
+    async post<T, R>(endpoint: string, body: T): Promise<R> {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             headers: getAuthHeaders(),
             body: JSON.stringify(body),
         });
         return handleResponse<R>(response);
     },
-
-    put: async <T = any, R = any>(url: string, body?: T): Promise<{ data: R }> => {
-        const fullUrl = `${API_BASE_URL}${url}`;
-        console.log(`API PUT: ${fullUrl}`, body);
-        const response = await fetch(fullUrl, {
+    async put<T, R>(endpoint: string, body: T): Promise<R> {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'PUT',
             headers: getAuthHeaders(),
             body: JSON.stringify(body),
         });
         return handleResponse<R>(response);
     },
-
-    delete: async <R = any>(url: string): Promise<{ data: R }> => {
-        const fullUrl = `${API_BASE_URL}${url}`;
-        console.log(`API DELETE: ${fullUrl}`);
-        const response = await fetch(fullUrl, {
+    async delete<R>(endpoint: string): Promise<R> {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
         return handleResponse<R>(response);
     },
 };
-// =============================================
-// FIM DA DEFINIÇÃO DO API CLIENT CORRIGIDA
-// =============================================
 
+// ========================================================
+// SERVIÇOS EXPORTÁVEIS
+// ========================================================
 
-// =============================================
-// SERVIÇOS DE AUTENTICAÇÃO
-// =============================================
-export const loginUser = async (credentials: { email: string, senha: string }): Promise<{ data: AuthResponseData }> => {
-    return apiClient.post<typeof credentials, AuthResponseData>('/auth/login', credentials);
+export const authService = {
+    login: (credentials: { email: string; senha: string }): Promise<AuthResponse> => {
+        // Pega a URL base do ambiente (ex: http://localhost:8081/api)
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8081';
+
+        // Constroi a URL de login SEM o prefixo /api
+        // Ex: "http://localhost:8081/api".replace('/api', '') -> "http://localhost:8081"
+        // Resultado final: "http://localhost:8081/auth/login"
+        const loginUrl = baseUrl.replace('/api', '') + '/auth/login';
+        
+        // Faz a chamada diretamente com fetch para usar a URL customizada
+        return fetch(loginUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(credentials)
+        }).then(response => handleResponse<AuthResponse>(response)); // Reutiliza nosso tratador de resposta
+    },
+    // ... outros métodos de auth se houver ...
 };
 
-export const registerUserApi = async (userData: CreateUserFormData): Promise<{ data: User }> => {
-    return apiClient.post<CreateUserFormData, User>('/auth/registrar', userData);
+
+export const userService = {
+    getAll: (): Promise<Usuario[]> => apiClient.get<Usuario[]>('/usuarios'),
+    getById: (id: number): Promise<Usuario> => apiClient.get<Usuario>(`/usuarios/${id}`),
+    create: (data: CreateUserFormData): Promise<Usuario> => apiClient.post('/usuarios', data),
+    update: (id: number, data: UpdateUserFormData): Promise<Usuario> => apiClient.put(`/usuarios/${id}`, data),
+    delete: (id: number): Promise<void> => apiClient.delete<void>(`/usuarios/${id}`),
 };
 
-// =============================================
-// SERVIÇOS DE USUÁRIO (CRUD)
-// =============================================
-export const fetchUsersApi = async (): Promise<{ data: User[] }> => {
-    return apiClient.get<User[]>('/api/usuarios');
+export const pdiService = {
+    getAll: (filters?: { colaboradorId?: number }): Promise<PDI[]> => {
+        // Lógica corrigida aqui
+        let query = '';
+        if (filters) {
+            const cleanFilters: Record<string, string> = {};
+            // Adiciona ao objeto apenas os filtros que não são nulos/undefined
+            if (filters.colaboradorId) {
+                cleanFilters.colaboradorId = String(filters.colaboradorId);
+            }
+            // Constrói a query string
+            const params = new URLSearchParams(cleanFilters).toString();
+            if (params) {
+                query = `?${params}`;
+            }
+        }
+        return apiClient.get<PDI[]>(`/pdis${query}`);
+    },
+    getById: (id: number): Promise<PDI> => apiClient.get<PDI>(`/pdis/${id}`),
+    create: (data: CreatePDIFormData): Promise<PDI> => apiClient.post('/pdis', data),
+    update: (id: number, data: UpdatePDIFormData): Promise<PDI> => apiClient.put(`/pdis/${id}`, data),
 };
 
-export const fetchUserByIdApi = async (userId: number): Promise<{ data: User }> => {
-    return apiClient.get<User>(`/api/usuarios/${userId}`);
-};
+// ... adicione feedbackService e dashboardService da mesma forma
 
-export const createUserApi = async (userData: CreateUserFormData): Promise<{ data: User }> => {
-    return apiClient.post<CreateUserFormData, User>('/api/usuarios', userData);
-};
-
-export const updateUserApi = async (userId: number, userData: UpdateUserFormData): Promise<{ data: User }> => {
-    return apiClient.put<UpdateUserFormData, User>(`/api/usuarios/${userId}`, userData);
-};
-
-export const deleteUserApi = async (userId: number): Promise<{ data: any }> => {
-    return apiClient.delete(`/api/usuarios/${userId}`);
-};
-
-// =============================================
-// SERVIÇOS DE FEEDBACK
-// =============================================
-export const fetchFeedbacksApi = async (filters?: { destinatarioId?: number, autorId?: number }): Promise<{ data: Feedback[] }> => {
-    if (filters?.destinatarioId) {
-        return apiClient.get<Feedback[]>(`/api/feedbacks/destinatario/${filters.destinatarioId}`);
+export const dashboardService = {
+    getAdminDashboard: (): Promise<AdminDashboardData> => {
+        return apiClient.get<AdminDashboardData>('/dashboard/admin');
     }
-    return apiClient.get<Feedback[]>('/api/feedbacks');
 };
 
-export const createFeedbackApi = async (feedbackData: CreateFeedbackFormData): Promise<{ data: Feedback }> => {
-    return apiClient.post<CreateFeedbackFormData, Feedback>('/api/feedbacks', feedbackData);
-};
-
-// =============================================
-// SERVIÇOS DE PDI
-// =============================================
-export const fetchPDIsApi = async (filters?: { colaboradorId?: number }): Promise<{ data: PDI[] }> => {
-    if (filters?.colaboradorId) {
-        return apiClient.get<PDI[]>(`/api/pdis/colaborador/${filters.colaboradorId}`);
-    }
-    return apiClient.get<PDI[]>('/api/pdis');
-};
-
-export const fetchPDIByIdApi = async (pdiId: number): Promise<{ data: PDI }> => {
-    return apiClient.get<PDI>(`/api/pdis/${pdiId}`);
-};
-
-export const createPDIApi = async (pdiData: CreatePDIFormData): Promise<{ data: PDI }> => {
-    return apiClient.post<CreatePDIFormData, PDI>('/api/pdis', pdiData);
-};
-
-export const updatePDIApi = async (pdiId: number, pdiData: UpdatePDIFormData): Promise<{ data: PDI }> => {
-    return apiClient.put<UpdatePDIFormData, PDI>(`/api/pdis/${pdiId}`, pdiData);
+export const feedbackService = {
+    getAll: (filters?: { destinatarioId?: number; autorId?: number }): Promise<Feedback[]> => {
+ let query = '';
+        if (filters) {
+            const cleanFilters: Record<string, string> = {};
+            // Adiciona ao objeto apenas os filtros que não são nulos/undefined
+            if (filters.destinatarioId) {
+                cleanFilters.destinatarioId = String(filters.destinatarioId);
+            }
+            if (filters.autorId) {
+                cleanFilters.autorId = String(filters.autorId);
+            }
+            // Constrói a query string
+            const params = new URLSearchParams(cleanFilters).toString();
+            if (params) {
+                query = `?${params}`;
+            }
+        }
+        return apiClient.get<Feedback[]>(`/feedbacks${query}`);
+    },
+    create: (data: CreateFeedbackFormData): Promise<Feedback> => {
+        return apiClient.post('/feedbacks', data);
+    },
 };

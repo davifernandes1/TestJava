@@ -1,80 +1,90 @@
 package com.progress.progress_api.security;
 
+import com.progress.progress_api.config.JwtProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.security.Key;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.function.Function;
 
 @Component
-public class JwtUtil {
+public final class JwtUtil {
 
-    @Value("${jwt.secret}")
-    private String secretString; // Defina no application.properties: jwt.secret=seuSegredoSuperLongoESeguroAquiComPeloMenos256Bits
+    private final JwtProperties jwtProperties;
+    private final Key secretKey;
 
-    @Value("${jwt.expiration.ms}")
-    private long expirationMs; // Defina no application.properties: jwt.expiration.ms=3600000 (1 hora)
+    /**
+     * Injeta as propriedades de configuração via construtor.
+     * A chave secreta (secretKey) é inicializada aqui uma única vez.
+     */
+    public JwtUtil(JwtProperties jwtProperties) {
+        this.jwtProperties = jwtProperties;
 
-    private Key secretKey;
-
-    @PostConstruct
-    public void init() {
-        // Garante que a chave tenha pelo menos 256 bits para HS256
-        if (secretString.length() * 8 < 256) {
-            throw new IllegalArgumentException("JWT secret key must be at least 256 bits long for HS256 algorithm.");
+        String secretString = jwtProperties.getSecret();
+        
+        // Garante que a chave tenha pelo menos 256 bits (32 bytes) para o algoritmo HS256
+        if (secretString == null || secretString.getBytes().length < 32) {
+            throw new IllegalArgumentException("JWT secret key must be at least 256 bits (32 bytes) long.");
         }
+        
         this.secretKey = Keys.hmacShaKeyFor(secretString.getBytes());
     }
 
+    /**
+     * Extrai o nome de usuário (subject) do token.
+     */
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
+    /**
+     * Extrai a data de expiração do token.
+     */
     public Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
     }
 
+    /**
+     * Função genérica para extrair uma informação (claim) específica do token.
+     */
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
     }
 
+    /**
+     * Valida o token comparando o username e verificando se não está expirado.
+     */
+    public Boolean validateToken(String token, UserDetails userDetails) {
+        final String username = extractUsername(token);
+        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+    }
+
+    /**
+     * Gera um novo token para o usuário.
+     */
+    public String generateToken(UserDetails userDetails) {
+        return Jwts.builder()
+                .setSubject(userDetails.getUsername())
+                .setIssuedAt(new Date(System.currentTimeMillis()))
+                .setExpiration(new Date(System.currentTimeMillis() + jwtProperties.getExpirationMs()))
+                .signWith(this.secretKey) // Uso moderno do jjwt, infere o algoritmo da chave
+                .compact();
+    }
+
     private Claims extractAllClaims(String token) {
-        return Jwts.parserBuilder().setSigningKey(secretKey).build().parseClaimsJws(token).getBody();
+        return Jwts.parserBuilder()
+                .setSigningKey(this.secretKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     private Boolean isTokenExpired(String token) {
         return extractExpiration(token).before(new Date());
-    }
-
-    public String generateToken(UserDetails userDetails) {
-        Map<String, Object> claims = new HashMap<>();
-        // Você pode adicionar mais claims aqui, como roles, se necessário
-        // Ex: claims.put("roles", userDetails.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toList()));
-        return createToken(claims, userDetails.getUsername());
-    }
-
-    private String createToken(Map<String, Object> claims, String subject) {
-        return Jwts.builder()
-                .setClaims(claims)
-                .setSubject(subject)
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(secretKey, SignatureAlgorithm.HS256)
-                .compact();
-    }
-
-    public Boolean validateToken(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
     }
 }

@@ -1,101 +1,100 @@
-// src/lib/auth.ts
+// src/lib/auth.tsx
 'use client';
 
-import React, { useState, createContext, useContext, useEffect, ReactNode } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import { User, AuthContextType, AuthResponseData } from './types';
-import { loginUser as loginUserApi } from './apiService'; // Importa a função de login da API
+import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { authService } from './apiService'; // Corrigido para importar authService
+import type { Usuario } from './types';
+
+interface AuthContextType {
+  user: Usuario | null;
+  token: string | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  loading: boolean;
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-    const [user, setUser] = useState<User | null>(null);
-    const [token, setToken] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true); // Estado de carregamento inicial
-    const router = useRouter();
-    const pathname = usePathname();
+  const [user, setUser] = useState<Usuario | null>(null); // Corrigido o '=='
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
-    useEffect(() => {
-        // Tenta carregar o token e usuário do localStorage ao iniciar a aplicação
-        const storedToken = localStorage.getItem('authToken');
-        const storedUserString = localStorage.getItem('authUser');
+  useEffect(() => {
+    try {
+      const storedToken = sessionStorage.getItem('authToken');
+      const storedUser = sessionStorage.getItem('authUser');
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (error) {
+      console.error("Falha ao carregar autenticação da sessão", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-        if (storedToken && storedUserString) {
-            try {
-                const storedUser = JSON.parse(storedUserString) as User;
-                setToken(storedToken);
-                setUser(storedUser);
-            } catch (error) {
-                console.error("Erro ao parsear usuário do localStorage:", error);
-                // Limpa o localStorage se os dados estiverem corrompidos
-                localStorage.removeItem('authToken');
-                localStorage.removeItem('authUser');
-            }
-        }
-        setLoading(false); // Finaliza o carregamento inicial
-    }, []);
 
-    useEffect(() => {
-        // Lógica de redirecionamento baseada no estado de autenticação e na rota atual
-        if (!loading) { // Só executa após o carregamento inicial
-            const isAuthPage = pathname === '/login'; // Adicione outras rotas de autenticação se houver (ex: /registrar)
-            
-            if (!user && !isAuthPage) {
-                // Se não está logado e não está numa página de autenticação, redireciona para login
-                router.replace('/login');
-            } else if (user && isAuthPage) {
-                // Se está logado e está numa página de autenticação, redireciona para o dashboard
-                router.replace('/dashboard');
-            }
-        }
-    }, [user, loading, pathname, router]);
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await authService.login({ email: email, senha: password });
 
-    const login = async (credentials: { email: string, senha: string }) => {
-        try {
-            const response = await loginUserApi(credentials); // Chama a função da API
-            const { token: tokenData, ...userDataFromApi } = response.data;
+      console.log("Resposta recebida do backend:", response);
 
-            // Mapeia a resposta da API para o tipo User do frontend, se necessário
-            const loggedInUser: User = {
-                id: userDataFromApi.id,
-                nome: userDataFromApi.nome,
-                email: userDataFromApi.email,
-                role: userDataFromApi.role,
-                // cargo e area podem ser incluídos se o backend retornar
-            };
+      // ### LÓGICA CORRIGIDA ###
+      // Verificamos as propriedades "planas" que recebemos
+      if (response && response.token && response.email) {
+        
+        // Criamos o objeto 'usuario' a partir da resposta plana
+        const usuarioParaSalvar: Usuario = {
+            id: response.id,
+            nome: response.nome,
+            email: response.email,
+            roles: response.roles,
+            // Adicione outros campos de Usuario que possam faltar, com valores padrão
+            status: 'ATIVO', // Exemplo, já que não vem na resposta de login
+        };
 
-            setUser(loggedInUser);
-            setToken(tokenData);
-            localStorage.setItem('authToken', tokenData);
-            localStorage.setItem('authUser', JSON.stringify(loggedInUser));
-            router.push('/dashboard'); // Redireciona para o painel principal
-        } catch (error) {
-            console.error("Falha no login (AuthContext):", error);
-            throw error; // Re-lança o erro para ser tratado no componente de login (ex: exibir mensagem)
-        }
-    };
+        // Salvamos os dados e redirecionamos
+        setUser(usuarioParaSalvar);
+        setToken(response.token);
+        sessionStorage.setItem('authUser', JSON.stringify(usuarioParaSalvar));
+        sessionStorage.setItem('authToken', response.token);
+        
+        router.push('/dashboard'); // Agora vai redirecionar!
 
-    const logout = () => {
-        setUser(null);
-        setToken(null);
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('authUser');
-        router.push('/login'); // Redireciona para a tela de login
-    };
-    
-    const isAuthenticated = !!token && !!user;
+      } else {
+        console.error("A resposta do backend é inválida.", response);
+        throw new Error("Resposta de autenticação inválida recebida do servidor.");
+      }
+    } catch (error) {
+      console.error("Auth.tsx - Falha no serviço de login:", error);
+      throw error;
+    }
+  };
 
-    return (
-        <AuthContext.Provider value={{ user, token, login, logout, loading, isAuthenticated }}>
-            {children}
-        </AuthContext.Provider>
-    );
+  const logout = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    sessionStorage.removeItem('authUser');
+    sessionStorage.removeItem('authToken');
+    router.push('/login');
+  }, [router]);
+
+  return (
+    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = (): AuthContextType => {
-    const context = useContext(AuthContext);
-    if (context === undefined) {
-        throw new Error('useAuth deve ser usado dentro de um AuthProvider');
-    }
-    return context;
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
+  }
+  return context;
 };

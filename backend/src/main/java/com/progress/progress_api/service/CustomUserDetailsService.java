@@ -1,7 +1,7 @@
 package com.progress.progress_api.service;
 
 
-import com.progress.progress_api.model.Usuario;
+
 import com.progress.progress_api.repository.UsuarioRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;

@@ -21,7 +21,7 @@ public class FeedbackService {
     private UsuarioRepository usuarioRepository;
     
     @Autowired
-    private GeminiService geminiService; // Mockado
+    private GeminiService geminiService;
 
     @Transactional
     public FeedbackDTO criarFeedback(FeedbackDTO feedbackDTO) {
@@ -38,10 +38,8 @@ public class FeedbackService {
         feedback.setDificuldadesEncontradas(feedbackDTO.getDificuldadesEncontradas());
         feedback.setInteressesAprendizado(feedbackDTO.getInteressesAprendizado());
         
-        // Simular chamada à IA
-        geminiService.analisarFeedbackComIA(feedbackDTO); // Atualiza o DTO com dados da IA
+        geminiService.analisarFeedbackComIA(feedbackDTO);
         
-        // Copiar dados da IA do DTO para a entidade
         feedback.setSentimentoAnalisado(feedbackDTO.getSentimentoAnalisado());
         feedback.setCategoriaDificuldadeAnalisada(feedbackDTO.getCategoriaDificuldadeAnalisada());
         feedback.setMetaSugeridaIA(feedbackDTO.getMetaSugeridaIA());
@@ -68,7 +66,9 @@ public class FeedbackService {
                 .collect(Collectors.toList());
     }
 
-    private FeedbackDTO convertToDTO(Feedback feedback) {
+    // ### CORREÇÃO APLICADA AQUI ###
+    // Método agora é PÚBLICO para ser acessível por outros serviços
+    public FeedbackDTO convertToDTO(Feedback feedback) {
         FeedbackDTO dto = new FeedbackDTO();
         dto.setId(feedback.getId());
         dto.setAutorId(feedback.getAutor().getId());
